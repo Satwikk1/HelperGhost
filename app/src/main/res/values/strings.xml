@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Ghost</string>
+    <string name="title_activity_splash_screen">SplashScreen</string>
+    <string name="title_activity_onboarding_screen">OnboardingScreen</string>
+    <string name="title_activity_loading_screen">LoadingScreen</string>
+    <string name="landing_subtitle">Your intelligent companion</string>
+</resources>
