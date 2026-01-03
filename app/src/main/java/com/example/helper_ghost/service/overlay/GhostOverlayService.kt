@@ -26,7 +26,14 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.helper_ghost.R
 import com.example.helper_ghost.ui.components.GhostFloatingBubble
+import com.example.helper_ghost.utils.GhostBrain
 import com.example.helper_ghost.utils.GhostServiceManager
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
@@ -46,6 +53,16 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         createNotificationChannel()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d("GhostAI", "Loading Gemma model... please wait.")
+                GhostBrain.initialize(this@GhostOverlayService)
+                Log.d("GhostAI", "Gemma is ready to think! 🧠")
+            } catch (e: Exception) {
+                Log.e("GhostAI", "Failed to load model: ${e.message}")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -97,6 +114,29 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
         )
     }
 
+    private fun processImageWithMLKit(bitmap: Bitmap) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = InputImage.fromBitmap(bitmap, 0)
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val recognizedText = visionText.text
+                if (recognizedText.isNotBlank()) {
+                    Log.d("GhostAI", "Recognized Text: $recognizedText")
+
+                    GhostBrain.getSmartSuggestion(recognizedText) { suggestion ->
+                        updateGhostUI(suggestion)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("GhostAI", "Text recognition failed: ${e.message}")
+            }
+    }
+
+    private fun updateGhostUI(suggestion: String) {
+        Log.d("GhostAI", "Suggested Reply: $suggestion")
+    }
+
     private fun captureScreenAndSuggest() {
         Log.d("GhostOverlayService", "captureScreenAndSuggest called")
 
@@ -104,9 +144,8 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (image != null) {
             try {
                 val bitmap = imageToBitmap(image)
-                Log.d("GhostOverlayService", "Screenshot captured: ${bitmap.width}x${bitmap.height}")
 
-                // NEXT STEP: Pass this bitmap to ML Kit for Text Recognition
+                processImageWithMLKit(bitmap)
 
             } catch (e: Exception) {
                 Log.e("GhostOverlayService", "Capture processing failed: ${e.message}")
