@@ -1,7 +1,5 @@
 package com.example.helper_ghost.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -13,25 +11,67 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = GhostCyan,
-    onPrimary = SlateDark,
-    secondary = SoftGray,
-    onSecondary = Color.White,
-    surface = SlateDark,
-    background = Color(0xFF020617), // Deepest midnight blue
-    onBackground = Color.White,
-    onSurface = Color.White,
-    outline = Color(0xFF475569),
+    primary = Dark.Primary,
+    onPrimary = Dark.PrimaryForeground,
+    primaryContainer = GhostCyan,
+    onPrimaryContainer = Color.Black,
+    inversePrimary = Primary,
+    secondary = Dark.Secondary,
+    onSecondary = Dark.Foreground,
+    secondaryContainer = SlateDark,
+    onSecondaryContainer = Color.White,
+    tertiary = Chart3,
+    onTertiary = Color.White,
+    tertiaryContainer = Dark.Muted,
+    onTertiaryContainer = Dark.MutedForeground,
+    background = Dark.Background,
+    onBackground = Dark.Foreground,
+    surface = Dark.Card,
+    onSurface = Dark.CardForeground,
+    surfaceVariant = Dark.Muted,
+    onSurfaceVariant = Dark.MutedForeground,
+    surfaceTint = Dark.Primary,
+    inverseSurface = Foreground,
+    inverseOnSurface = Background,
+    error = Dark.Destructive,
+    onError = Color.White,
+    errorContainer = Chart1,
+    onErrorContainer = Color.White,
+    outline = Dark.Border,
+    outlineVariant = Dark.MutedForeground,
+    scrim = Color.Black
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = GhostCyan,
-    secondary = SlateDark,
-    background = BgLight,
-    surface = Color.White,
-    onPrimary = Color.White,
-    onBackground = TextMain,
-    onSurface = TextMain
+    primary = Primary,
+    onPrimary = PrimaryForeground,
+    primaryContainer = GhostCyan,
+    onPrimaryContainer = TextMain,
+    inversePrimary = Dark.Primary,
+    secondary = Secondary,
+    onSecondary = SecondaryForeground,
+    secondaryContainer = SoftGray,
+    onSecondaryContainer = TextMain,
+    tertiary = Accent,
+    onTertiary = AccentForeground,
+    tertiaryContainer = InputBackground,
+    onTertiaryContainer = MutedForeground,
+    background = Background,
+    onBackground = Foreground,
+    surface = Card,
+    onSurface = CardForeground,
+    surfaceVariant = Muted,
+    onSurfaceVariant = MutedForeground,
+    surfaceTint = Primary,
+    inverseSurface = Dark.Background,
+    inverseOnSurface = Dark.Foreground,
+    error = Destructive,
+    onError = DestructiveForeground,
+    errorContainer = Chart1,
+    onErrorContainer = Color.White,
+    outline = Border,
+    outlineVariant = SwitchBackground,
+    scrim = Color.Black,
 )
 
 @Composable

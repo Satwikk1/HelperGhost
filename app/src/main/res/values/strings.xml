@@ -4,4 +4,6 @@
     <string name="title_activity_onboarding_screen">OnboardingScreen</string>
     <string name="title_activity_loading_screen">LoadingScreen</string>
     <string name="landing_subtitle">Your intelligent companion</string>
+    <string name="select_personas_title">Active Personas</string>
+    <string name="active_personas_description">Choose how Ghost should interact on your behalf</string>
 </resources>

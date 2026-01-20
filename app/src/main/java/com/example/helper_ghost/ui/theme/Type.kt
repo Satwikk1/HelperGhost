@@ -7,29 +7,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val GhostTypography = Typography(
-    // Used for the "Ghost" brand title on the dashboard
+
     displayLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
+        fontSize = 48.sp,
+        lineHeight = 56.sp,
         letterSpacing = (-0.5).sp
     ),
-    // Used for section headers like "Service Status" or "Active Personas"
+
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        letterSpacing = (-0.25).sp
+    ),
+
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
         lineHeight = 28.sp
     ),
-    // Used for card headers like "Meeting Response" in suggestions
+
     titleMedium = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
         fontSize = 18.sp,
         lineHeight = 24.sp
     ),
-    // The main text for AI-generated suggestions
+
     bodyMedium = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
@@ -37,7 +45,7 @@ val GhostTypography = Typography(
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp
     ),
-    // Used for the "Auto-Decide" badge and "Listening in background"
+
     labelSmall = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
