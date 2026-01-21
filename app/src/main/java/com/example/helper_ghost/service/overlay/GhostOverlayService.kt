@@ -57,11 +57,11 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // UI State
     private var isExpanded by mutableStateOf(false)
     
-    // Window Position (Actual coordinates of the Overlay Window)
+    // Window Position
     private var windowX by mutableStateOf(0)
     private var windowY by mutableStateOf(0)
     
-    // Bubble Position (Screen coordinates - used as anchor)
+    // Bubble Position
     private var bubbleX by mutableStateOf(0f)
     private var bubbleY by mutableStateOf(0f)
 
@@ -76,10 +76,8 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val bWidth = (140 * metrics.density).toInt()
         val bHeight = (48 * metrics.density).toInt()
         
-        // Start bottom-right
         bubbleX = (metrics.widthPixels - bWidth - marginPx).toFloat()
         bubbleY = (metrics.heightPixels - bHeight - marginPx).toFloat()
-        
         windowX = bubbleX.toInt()
         windowY = bubbleY.toInt()
 
@@ -90,22 +88,33 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+
         val resultCode = intent?.getIntExtra(GhostServiceManager.EXTRA_RESULT_CODE, -1) ?: -1
         val data = intent?.getParcelableExtra<Intent>(GhostServiceManager.EXTRA_DATA)
 
+        startForeground(NOTIFICATION_ID, createNotification())
+
         if (resultCode == Activity.RESULT_OK && data != null) {
-            startForeground(NOTIFICATION_ID, createNotification())
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+
             setupCaptureEngine()
             showGhostBubble()
-        } else {
-            stopSelf()
         }
-        return START_NOT_STICKY
+        
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // This is called when app is swiped away from recents.
+        // We do nothing here to ensure the service stays alive as it's a foreground service.
+        Log.d("GhostService", "onTaskRemoved: Helper Ghost is still active.")
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun showGhostBubble() {
+        if (ghostView != null) return
+
         val metrics = resources.displayMetrics
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -132,6 +141,7 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     screenWidth = metrics.widthPixels,
                     screenHeight = metrics.heightPixels,
                     isExpandedProp = isExpanded,
+                    selectedPersonas = setOf("Witty", "Executive", "Romantic"), 
                     onExpandChanged = { expanded -> toggleExpansion(expanded) },
                     onPositionUpdate = { bX, bY, _, _ ->
                         if (!isExpanded) {
@@ -144,7 +154,9 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
                             windowManager.updateViewLayout(this@apply, params)
                         }
                     },
-                    onTriggerScreenshot = { captureScreenAndSuggest() }
+                    onTriggerScreenshot = { callback ->
+                        captureScreenAndRecognize(callback)
+                    }
                 )
             }
         }
@@ -153,7 +165,6 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun toggleExpansion(expanded: Boolean) {
         if (expanded) {
-            // Expand window to full screen
             params.width = WindowManager.LayoutParams.MATCH_PARENT
             params.height = WindowManager.LayoutParams.MATCH_PARENT
             params.x = 0
@@ -170,7 +181,6 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 params.blurBehindRadius = 70
             }
         } else {
-            // Shrink window back to bubble size
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
             params.height = WindowManager.LayoutParams.WRAP_CONTENT
             windowX = bubbleX.toInt()
@@ -182,7 +192,6 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
             params.dimAmount = 0f
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) params.blurBehindRadius = 0
         }
-        
         isExpanded = expanded
         windowManager.updateViewLayout(ghostView, params)
     }
@@ -190,25 +199,23 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun setupCaptureEngine() {
         val metrics = resources.displayMetrics
         imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-        val callback = object : MediaProjection.Callback() { override fun onStop() { cleanupCaptureResources() } }
-        mediaProjection?.registerCallback(callback, Handler(Looper.getMainLooper()))
+        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() { cleanupCaptureResources() }
+        }, Handler(Looper.getMainLooper()))
+        
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "GhostCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, null
         )
     }
 
-    private fun captureScreenAndSuggest() {
+    private fun captureScreenAndRecognize(onTextRecognized: (String) -> Unit) {
         val image = imageReader?.acquireLatestImage() ?: return
         try {
             val bitmap = imageToBitmap(image)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             recognizer.process(InputImage.fromBitmap(bitmap, 0)).addOnSuccessListener { visionText ->
-                if (visionText.text.isNotBlank()) {
-                    GhostBrain.getSmartSuggestion(visionText.text) { suggestion ->
-                        Log.d("GhostAI", "Suggested: $suggestion")
-                    }
-                }
+                onTextRecognized(visionText.text)
             }
         } finally { image.close() }
     }
@@ -227,8 +234,11 @@ class GhostOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ghost is Active")
+            .setContentText("Helper Ghost is running in background")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
             .build()
     }
 

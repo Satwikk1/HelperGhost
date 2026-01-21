@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.example.helper_ghost.ui.screens.landingScreen.LandingScreen
 import com.example.helper_ghost.ui.theme.GhostTheme
-import com.example.helper_ghost.utils.GhostServiceManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -15,10 +14,5 @@ class MainActivity : ComponentActivity() {
                 LandingScreen()
             }
         }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        GhostServiceManager.stopService(this)
     }
 }

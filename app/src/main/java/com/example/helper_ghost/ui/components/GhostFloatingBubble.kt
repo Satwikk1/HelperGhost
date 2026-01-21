@@ -1,10 +1,7 @@
 package com.example.helper_ghost.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -39,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.helper_ghost.ui.theme.AppColors
+import com.example.helper_ghost.utils.GhostBrain
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -57,27 +55,25 @@ fun GhostFloatingBubble(
     screenWidth: Int,
     screenHeight: Int,
     isExpandedProp: Boolean,
+    selectedPersonas: Set<String> = setOf("Witty"),
     onExpandChanged: (Boolean) -> Unit,
     onPositionUpdate: (x: Int, y: Int, isRight: Boolean, isBottom: Boolean) -> Unit,
-    onTriggerScreenshot: () -> Unit
+    onTriggerScreenshot: (onTextRecognized: (String) -> Unit) -> Unit
 ) {
     val density = LocalDensity.current
-    val marginPx = with(density) { 16.dp.toPx() }
     val bubbleWidthPx = with(density) { 140.dp.toPx() }
     val bubbleHeightPx = with(density) { 48.dp.toPx() }
+    val marginPx = with(density) { 16.dp.toPx() }
 
     val offset = remember { Animatable(Offset(bubbleX, bubbleY), Offset.VectorConverter) }
     val velocityTracker = remember { VelocityTracker() }
     val scope = rememberCoroutineScope()
     
     var popupHeight by remember { mutableStateOf(0) }
-
-    val suggestions = remember {
-        listOf(
-            Suggestion("Meeting Response", "Accept 3pm meeting with Sarah and suggest conference room B"),
-            Suggestion("Dinner Plans", "Recommend Italian restaurant downtown, make reservation for 7pm")
-        )
-    }
+    
+    // LLM Related State
+    var isLLMLoading by remember { mutableStateOf(false) }
+    var suggestionList by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
 
     LaunchedEffect(bubbleX, bubbleY) {
         if (!offset.isRunning) offset.snapTo(Offset(bubbleX, bubbleY))
@@ -96,41 +92,24 @@ fun GhostFloatingBubble(
         mutableStateOf(offset.value.y > screenHeight / 2) 
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(isExpandedProp) {
-                if (isExpandedProp) { detectDragGestures { _, _ -> } }
-            }
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (isExpandedProp) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Transparent)
-                    .clickable { onExpandChanged(false) }
-            )
+            Box(modifier = Modifier.fillMaxSize().background(Color.Transparent).clickable { onExpandChanged(false) })
         }
 
+        // POSITIONED Popup
         Box(
             modifier = Modifier
                 .offset {
                     val bX = offset.value.x
                     val bY = offset.value.y
-                    
-                    val pX = if (isSnappedToRight) {
-                        bX - (340.dp.toPx() - bubbleWidthPx)
+                    if (isExpandedProp) {
+                        val pX = if (isSnappedToRight) bX - (340.dp.toPx() - bubbleWidthPx) else bX
+                        val pY = if (isSnappedToBottom) bY - popupHeight - with(density) { 16.dp.toPx() } else bY + bubbleHeightPx + with(density) { 16.dp.toPx() }
+                        IntOffset((pX - windowX).roundToInt(), (pY - windowY).roundToInt())
                     } else {
-                        bX
+                        IntOffset((bX - windowX).roundToInt(), (bY - windowY).roundToInt())
                     }
-                    
-                    val pY = if (isSnappedToBottom) {
-                        bY - popupHeight - with(density) { 16.dp.toPx() }
-                    } else {
-                        bY + bubbleHeightPx + with(density) { 16.dp.toPx() }
-                    }
-                    
-                    IntOffset((pX - windowX).roundToInt(), (pY - windowY).roundToInt())
                 }
                 .onGloballyPositioned { popupHeight = it.size.height }
         ) {
@@ -147,17 +126,19 @@ fun GhostFloatingBubble(
                     animationSpec = spring(stiffness = Spring.StiffnessMedium)
                 )
             ) {
-                ExpandedSuggestionView(suggestions = suggestions, onClose = { onExpandChanged(false) })
+                ExpandedSuggestionView(
+                    suggestions = suggestionList,
+                    isLoading = isLLMLoading,
+                    onClose = { onExpandChanged(false) }
+                )
             }
         }
 
+        // FIXED Bubble
         Box(
             modifier = Modifier
                 .offset {
-                    IntOffset(
-                        (offset.value.x - windowX).roundToInt(),
-                        (offset.value.y - windowY).roundToInt()
-                    )
+                    IntOffset((offset.value.x - windowX).roundToInt(), (offset.value.y - windowY).roundToInt())
                 }
                 .pointerInput(isExpandedProp) {
                     if (!isExpandedProp) {
@@ -175,7 +156,6 @@ fun GhostFloatingBubble(
                                 val velocity = velocityTracker.calculateVelocity()
                                 val targetX = if (offset.value.x + bubbleWidthPx / 2 < screenWidth / 2) marginPx else screenWidth - bubbleWidthPx - marginPx
                                 val targetY = if (offset.value.y + bubbleHeightPx / 2 < screenHeight / 2) marginPx else screenHeight - bubbleHeightPx - marginPx
-                                
                                 scope.launch {
                                     offset.animateTo(
                                         targetValue = Offset(targetX, targetY),
@@ -191,7 +171,17 @@ fun GhostFloatingBubble(
                 .clip(CircleShape)
                 .background(brush = Brush.linearGradient(listOf(AppColors.Purple.medium, AppColors.Purple.deep)))
                 .clickable {
-                    if (!isExpandedProp) onTriggerScreenshot()
+                    if (!isExpandedProp) {
+                        // Start LLM Loading
+                        isLLMLoading = true
+                        suggestionList = emptyList()
+                        onTriggerScreenshot { recognizedText ->
+                            GhostBrain.getSmartSuggestions(recognizedText, selectedPersonas) { results ->
+                                suggestionList = results
+                                isLLMLoading = false
+                            }
+                        }
+                    }
                     onExpandChanged(!isExpandedProp)
                 }
                 .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -200,7 +190,7 @@ fun GhostFloatingBubble(
                 Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(20.dp))
                 Text("Ghost", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(AppColors.Pink.hot), contentAlignment = Alignment.Center) {
-                    Text("3", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("${if (suggestionList.isNotEmpty()) suggestionList.size else 3}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -208,7 +198,11 @@ fun GhostFloatingBubble(
 }
 
 @Composable
-fun ExpandedSuggestionView(suggestions: List<Suggestion>, onClose: () -> Unit) {
+fun ExpandedSuggestionView(
+    suggestions: List<Suggestion>,
+    isLoading: Boolean,
+    onClose: () -> Unit
+) {
     Card(
         modifier = Modifier.width(340.dp).wrapContentHeight(),
         shape = RoundedCornerShape(32.dp),
@@ -224,13 +218,37 @@ fun ExpandedSuggestionView(suggestions: List<Suggestion>, onClose: () -> Unit) {
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close", tint = AppColors.Purple.light) }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.heightIn(max = 400.dp)) {
-                items(suggestions) { SuggestionCard(it) }
+            
+            if (isLoading) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    repeat(3) { ShimmerSuggestionCard() }
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(suggestions) { SuggestionCard(it) }
+                }
             }
+
             Spacer(modifier = Modifier.height(16.dp))
             Text("View all activity →", modifier = Modifier.align(Alignment.CenterHorizontally), color = AppColors.Purple.medium, style = MaterialTheme.typography.labelLarge)
         }
     }
+}
+
+@Composable
+fun ShimmerSuggestionCard() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 0.5f,
+        animationSpec = infiniteRepeatable(animation = tween(1000), repeatMode = RepeatMode.Reverse),
+        label = "alpha"
+    )
+    
+    Card(
+        modifier = Modifier.fillMaxWidth().height(120.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.LightGray.copy(alpha = alpha))
+    ) {}
 }
 
 @Composable

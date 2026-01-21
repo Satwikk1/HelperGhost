@@ -2,15 +2,16 @@ package com.example.helper_ghost.utils
 
 import android.content.Context
 import android.util.Log
+import com.example.helper_ghost.ui.components.Suggestion
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 object GhostBrain {
     private var llmInference: LlmInference? = null
@@ -25,7 +26,7 @@ object GhostBrain {
             try {
                 val engineOptions = LlmInference.LlmInferenceOptions.builder()
                     .setModelPath("/data/local/tmp/llm/model.bin")
-                    .setMaxTokens(512)
+                    .setMaxTokens(2048)
                     .build()
 
                 llmInference = LlmInference.createFromOptions(context, engineOptions)
@@ -38,15 +39,24 @@ object GhostBrain {
         }
     }
 
-    fun getSmartSuggestion(chatContext: String, onResult: (String) -> Unit) {
+    fun getSmartSuggestions(
+        chatContext: String,
+        selectedPersonas: Set<String>,
+        onResult: (List<Suggestion>) -> Unit
+    ) {
+        val personasStr = selectedPersonas.joinToString(", ")
         val prompt = """
-            You are a witty ghost assistant. Based on this chat context: "$chatContext", 
-            suggest one short, clever reply that sounds natural and cool.
-            Keep it under 15 words.
+            You are a ghost assistant with the following personas: $personasStr. 
+            Based on this chat context: "$chatContext", 
+            suggest 3 different clever replies. 
+            
+            Return the output strictly as a JSON array of objects with "title" and "description" keys.
+            Example: [{"title": "Quick Reply", "description": "Sounds good!"}, ...]
+            
+            Keep descriptions under 15 words. Do not include any other text in the response.
         """.trimIndent()
 
         CoroutineScope(Dispatchers.IO).launch {
-            // Use a Mutex to prevent overlapping JNI calls which cause the MediaPipe crash
             if (inferenceMutex.isLocked) {
                 Log.w("GhostBrain", "Inference is busy, skipping this request.")
                 return@launch
@@ -55,21 +65,50 @@ object GhostBrain {
             inferenceMutex.withLock {
                 val inference = llmInference
                 if (inference == null) {
-                    withContext(Dispatchers.Main) { onResult("Ghost is still waking up... 👻") }
+                    withContext(Dispatchers.Main) { 
+                        onResult(listOf(Suggestion("Ghost is sleeping", "Still initializing the AI model..."))) 
+                    }
                 } else {
                     try {
                         val response = inference.generateResponse(prompt)
+                        Log.d("GhostBrain", "LLM RAW Response: $response")
+                        
+                        val suggestions = parseSuggestions(response)
                         withContext(Dispatchers.Main) {
-                            onResult(response)
+                            onResult(suggestions)
                         }
                     } catch (e: Exception) {
                         Log.e("GhostBrain", "Inference error: ${e.message}")
                         withContext(Dispatchers.Main) {
-                            onResult("Ghost got a brain freeze! ❄️")
+                            onResult(emptyList())
                         }
                     }
                 }
             }
+        }
+    }
+
+    private fun parseSuggestions(rawResponse: String): List<Suggestion> {
+        return try {
+            // Clean response in case LLM adds markdown or fluff
+            val cleaned = rawResponse.substringAfter("[").substringBeforeLast("]")
+            val jsonStr = "[$cleaned]"
+            val jsonArray = JSONArray(jsonStr)
+            val list = mutableListOf<Suggestion>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                list.add(
+                    Suggestion(
+                        title = obj.optString("title", "Suggestion"),
+                        description = obj.optString("description", "")
+                    )
+                )
+            }
+            list.take(3)
+        } catch (e: Exception) {
+            Log.e("GhostBrain", "Parse error: ${e.message}")
+            // Fallback: simple split if JSON fails
+            listOf(Suggestion("Quick Ghost", rawResponse.take(50)))
         }
     }
 }
