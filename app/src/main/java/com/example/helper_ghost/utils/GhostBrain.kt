@@ -99,24 +99,42 @@ object GhostBrain {
     }
 
     private fun parseSuggestions(rawResponse: String): List<Suggestion> {
-        return try {
-            val cleaned = rawResponse.substringAfter("[").substringBeforeLast("]")
-            val jsonStr = "[$cleaned]"
-            val jsonArray = JSONArray(jsonStr)
-            val list = mutableListOf<Suggestion>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                list.add(
-                    Suggestion(
-                        title = obj.optString("title", "Suggestion"),
-                        description = obj.optString("description", "")
-                    )
-                )
-            }
-            list.take(3)
-        } catch (e: Exception) {
-            Log.e("GhostBrain", "Parse error: ${e.message}")
-            listOf(Suggestion("Quick Ghost", rawResponse.take(50)))
+        val titles = mutableListOf<String>()
+        val descriptions = mutableListOf<String>()
+
+        // Regex to find values for "title" and "description" keys
+        // Handles cases where LLM might omit commas or leave JSON unterminated
+        val titleRegex = Regex("\"title\"\\s*:\\s*\"([^\"]*)\"")
+        val descRegex = Regex("\"description\"\\s*:\\s*\"([^\"]*)\"")
+
+        titleRegex.findAll(rawResponse).forEach { match ->
+            titles.add(match.groupValues[1])
         }
+
+        descRegex.findAll(rawResponse).forEach { match ->
+            descriptions.add(match.groupValues[1])
+        }
+
+        val list = mutableListOf<Suggestion>()
+        val count = minOf(titles.size, descriptions.size)
+        
+        for (i in 0 until count) {
+            list.add(
+                Suggestion(
+                    title = titles[i],
+                    description = descriptions[i]
+                )
+            )
+        }
+
+        if (list.isEmpty()) {
+            Log.w("GhostBrain", "Regex parsing found no suggestions. Raw response: $rawResponse")
+            // Ultimate fallback: treat the whole response as one suggestion description if it's not too long
+            val fallbackTitle = "Quick Ghost"
+            val fallbackDesc = rawResponse.take(100).replace("\n", " ")
+            return listOf(Suggestion(fallbackTitle, fallbackDesc))
+        }
+
+        return list.take(3)
     }
 }

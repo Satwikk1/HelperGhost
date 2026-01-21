@@ -1,5 +1,6 @@
 package com.example.helper_ghost.ui.components
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -30,7 +31,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -43,7 +47,8 @@ import kotlin.math.roundToInt
 data class Suggestion(
     val title: String,
     val description: String,
-    val tag: String = "Auto-Decide"
+    val tag: String = "Auto-Decide",
+    val id: Long = System.nanoTime() // Unique ID for dismissal logic
 )
 
 @Composable
@@ -60,6 +65,8 @@ fun GhostFloatingBubble(
     onPositionUpdate: (x: Int, y: Int, isRight: Boolean, isBottom: Boolean) -> Unit,
     onTriggerScreenshot: (onTextRecognized: (String) -> Unit) -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val density = LocalDensity.current
     val bubbleWidthPx = with(density) { 140.dp.toPx() }
     val bubbleHeightPx = with(density) { 48.dp.toPx() }
@@ -131,7 +138,15 @@ fun GhostFloatingBubble(
                     suggestions = suggestionList,
                     isGhostBrainReady = isGhostBrainReady,
                     isLoading = isLLMLoading,
-                    onClose = { onExpandChanged(false) }
+                    onClose = { onExpandChanged(false) },
+                    onAccept = { suggestion ->
+                        clipboardManager.setText(AnnotatedString(suggestion.description))
+                        Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        onExpandChanged(false)
+                    },
+                    onDismiss = { suggestion ->
+                        suggestionList = suggestionList.filter { it.id != suggestion.id }
+                    }
                 )
             }
         }
@@ -205,7 +220,9 @@ fun ExpandedSuggestionView(
     suggestions: List<Suggestion>,
     isGhostBrainReady: Boolean,
     isLoading: Boolean,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onAccept: (Suggestion) -> Unit,
+    onDismiss: (Suggestion) -> Unit
 ) {
     Card(
         modifier = Modifier.width(340.dp).wrapContentHeight(),
@@ -229,7 +246,13 @@ fun ExpandedSuggestionView(
                 ProcessingView()
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.heightIn(max = 400.dp)) {
-                    items(suggestions) { SuggestionCard(it) }
+                    items(suggestions, key = { it.id }) { suggestion ->
+                        SuggestionCard(
+                            suggestion = suggestion,
+                            onAccept = { onAccept(suggestion) },
+                            onDismiss = { onDismiss(suggestion) }
+                        )
+                    }
                 }
             }
 
@@ -310,7 +333,11 @@ fun ShimmerSuggestionCard() {
 }
 
 @Composable
-fun SuggestionCard(suggestion: Suggestion) {
+fun SuggestionCard(
+    suggestion: Suggestion,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -326,8 +353,22 @@ fun SuggestionCard(suggestion: Suggestion) {
             Text(suggestion.description, style = MaterialTheme.typography.bodySmall, color = AppColors.Purple.medium, lineHeight = 18.sp)
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {}, modifier = Modifier.weight(1.5f), colors = ButtonDefaults.buttonColors(containerColor = AppColors.Purple.medium), shape = RoundedCornerShape(12.dp)) { Text("✓ Accept", fontSize = 12.sp) }
-                OutlinedButton(onClick = {}, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Purple.lightest)) { Text("Dismiss", fontSize = 12.sp, color = AppColors.Purple.medium) }
+                Button(
+                    onClick = onAccept,
+                    modifier = Modifier.weight(1.5f),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Purple.medium),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("✓ Accept", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Purple.lightest)
+                ) {
+                    Text("Dismiss", fontSize = 12.sp, color = AppColors.Purple.medium)
+                }
             }
         }
     }
