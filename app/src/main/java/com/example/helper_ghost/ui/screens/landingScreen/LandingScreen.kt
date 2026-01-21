@@ -49,11 +49,8 @@ fun LandingScreen() {
                 title = stringResource(id = R.string.app_name),
                 subtitle = stringResource(id = R.string.landing_subtitle)
             )
-
             Spacer(modifier = Modifier.height(16.dp))
-            
             ShowStatusCard()
-
             Column(modifier = Modifier.padding(start = 8.dp, end = 8.dp)) {
                 Text(
                     text = stringResource(id = R.string.select_personas_title),
@@ -68,7 +65,6 @@ fun LandingScreen() {
                     modifier = Modifier.padding(top = 6.dp, bottom = 24.dp)
                 )
             }
-
             PersonaSection(
                 selectedPersonas = selectedPersonas,
                 onPersonaToggle = { persona ->
@@ -79,7 +75,6 @@ fun LandingScreen() {
                     }
                 }
             )
-
             StatsSection(modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
         }
     }
