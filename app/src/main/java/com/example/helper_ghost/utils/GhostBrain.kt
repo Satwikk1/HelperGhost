@@ -13,8 +13,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 
 object GhostBrain {
     private var llmInference: LlmInference? = null
@@ -31,9 +31,16 @@ object GhostBrain {
         
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val modelDir = File(context.filesDir, "llm")
+                if (!modelDir.exists()) modelDir.mkdirs()
+                val modelFile = File(modelDir, "gemma-2b-model.bin")
+                if (!modelFile.exists()) {
+                    copyModelFromAssets(context, "gemma-2b-model.bin", modelFile)
+                }
+
                 val engineOptions = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath("/data/local/tmp/llm/model.bin")
-                    .setMaxTokens(2048)
+                    .setModelPath(modelFile.absolutePath)
+                    .setMaxTokens(1024)
                     .build()
 
                 llmInference = LlmInference.createFromOptions(context, engineOptions)
@@ -47,94 +54,91 @@ object GhostBrain {
         }
     }
 
+    private fun copyModelFromAssets(context: Context, assetName: String, targetFile: File) {
+        context.assets.open(assetName).use { input ->
+            FileOutputStream(targetFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+    }
+
     fun getSmartSuggestions(
         chatContext: String,
         selectedPersonas: Set<String>,
         onResult: (List<Suggestion>) -> Unit
     ) {
+        val cleanContext = sanitizeContext(chatContext)
+        if (cleanContext.isBlank()) {
+            onResult(emptyList())
+            return
+        }
+
         val personasStr = selectedPersonas.joinToString(", ")
         val prompt = """
-            You are a ghost assistant with the following personas: $personasStr. 
-            Based on this chat context: "$chatContext", 
-            suggest 3 different clever replies. 
+            Personas: $personasStr
+            Chat Context: "$cleanContext"
             
-            Return the output strictly as a JSON array of objects with "title" and "description" keys.
-            Example: [{"title": "Quick Reply", "description": "Sounds good!"}, ...]
+            Task: Suggest 3 clever replies in the same language as the context.
+            Structure: Return ONLY a JSON array of 3 objects with "title" and "description".
+            Constraint: Description < 15 words. No markdown.
             
-            provide the reply in the same language as the text is in.
-            
-            Keep descriptions under 15 words.
+            Response:
         """.trimIndent()
 
         CoroutineScope(Dispatchers.IO).launch {
-            if (inferenceMutex.isLocked) {
-                Log.w("GhostBrain", "Inference is busy, skipping this request.")
-                return@launch
-            }
+            if (inferenceMutex.isLocked) return@launch
 
             inferenceMutex.withLock {
                 val inference = llmInference
                 if (inference == null) {
-                    withContext(Dispatchers.Main) { 
-                        onResult(emptyList()) 
-                    }
+                    withContext(Dispatchers.Main) { onResult(emptyList()) }
                 } else {
                     try {
                         val response = inference.generateResponse(prompt)
-                        Log.d("GhostBrain", "LLM RAW Response: $response")
-                        
+                        Log.d("GhostBrain", "LLM RAW: $response")
                         val suggestions = parseSuggestions(response)
-                        withContext(Dispatchers.Main) {
-                            onResult(suggestions)
-                        }
+                        withContext(Dispatchers.Main) { onResult(suggestions) }
                     } catch (e: Exception) {
                         Log.e("GhostBrain", "Inference error: ${e.message}")
-                        withContext(Dispatchers.Main) {
-                            onResult(emptyList())
-                        }
+                        withContext(Dispatchers.Main) { onResult(emptyList()) }
                     }
                 }
             }
         }
     }
 
+    private fun sanitizeContext(raw: String): String {
+        // Simple heuristic: remove lines that look like timestamps or single icons
+        return raw.lines()
+            .map { it.trim() }
+            .filter { line ->
+                line.length > 2 && 
+                !line.contains(Regex("^\\d{1,2}:\\d{2}")) && // Remove 12:09
+                !line.contains(Regex("^\\d+%$")) // Remove 80%
+            }
+            .joinToString(" ")
+            .takeLast(500) // Keep only recent history
+    }
+
     private fun parseSuggestions(rawResponse: String): List<Suggestion> {
         val titles = mutableListOf<String>()
         val descriptions = mutableListOf<String>()
 
-        // Regex to find values for "title" and "description" keys
-        // Handles cases where LLM might omit commas or leave JSON unterminated
         val titleRegex = Regex("\"title\"\\s*:\\s*\"([^\"]*)\"")
         val descRegex = Regex("\"description\"\\s*:\\s*\"([^\"]*)\"")
 
-        titleRegex.findAll(rawResponse).forEach { match ->
-            titles.add(match.groupValues[1])
-        }
-
-        descRegex.findAll(rawResponse).forEach { match ->
-            descriptions.add(match.groupValues[1])
-        }
+        titleRegex.findAll(rawResponse).forEach { titles.add(it.groupValues[1]) }
+        descRegex.findAll(rawResponse).forEach { descriptions.add(it.groupValues[1]) }
 
         val list = mutableListOf<Suggestion>()
         val count = minOf(titles.size, descriptions.size)
-        
         for (i in 0 until count) {
-            list.add(
-                Suggestion(
-                    title = titles[i],
-                    description = descriptions[i]
-                )
-            )
+            list.add(Suggestion(title = titles[i], description = descriptions[i]))
         }
 
-        if (list.isEmpty()) {
-            Log.w("GhostBrain", "Regex parsing found no suggestions. Raw response: $rawResponse")
-            // Ultimate fallback: treat the whole response as one suggestion description if it's not too long
-            val fallbackTitle = "Quick Ghost"
-            val fallbackDesc = rawResponse.take(100).replace("\n", " ")
-            return listOf(Suggestion(fallbackTitle, fallbackDesc))
+        if (list.isEmpty() && rawResponse.isNotBlank()) {
+            return listOf(Suggestion("Ghost Reply", rawResponse.take(100).replace("\n", " ")))
         }
-
         return list.take(3)
     }
 }
