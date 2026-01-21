@@ -11,11 +11,13 @@ import com.example.helper_ghost.service.overlay.GhostOverlayService
 object GhostServiceManager {
     const val EXTRA_RESULT_CODE = "EXTRA_RESULT_CODE"
     const val EXTRA_DATA = "EXTRA_DATA"
+    const val EXTRA_PERSONAS = "EXTRA_PERSONAS"
 
-    fun startService(context: Context, resultCode: Int, data: Intent) {
+    fun startService(context: Context, resultCode: Int, data: Intent, personas: Set<String>) {
         val intent = Intent(context, GhostOverlayService::class.java).apply {
             putExtra(EXTRA_RESULT_CODE, resultCode)
             putExtra(EXTRA_DATA, data)
+            putStringArrayListExtra(EXTRA_PERSONAS, ArrayList(personas))
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

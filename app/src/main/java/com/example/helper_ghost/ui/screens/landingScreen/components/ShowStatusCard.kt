@@ -44,7 +44,7 @@ import com.example.helper_ghost.ui.theme.AppGradients
 import com.example.helper_ghost.utils.GhostServiceManager
 
 @Composable
-fun ShowStatusCard(modifier: Modifier = Modifier) {
+fun ShowStatusCard(selectedPersonas: Set<String>, modifier: Modifier = Modifier) {
     var checked by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -56,7 +56,12 @@ fun ShowStatusCard(modifier: Modifier = Modifier) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            GhostServiceManager.startService(context = context, resultCode = result.resultCode, data = result.data!!)
+            GhostServiceManager.startService(
+                context = context, 
+                resultCode = result.resultCode, 
+                data = result.data!!,
+                personas = selectedPersonas
+            )
             checked = true
         }else{
             GhostServiceManager.stopService(context)

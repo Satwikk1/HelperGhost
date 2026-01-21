@@ -50,7 +50,7 @@ fun LandingScreen() {
                 subtitle = stringResource(id = R.string.landing_subtitle)
             )
             Spacer(modifier = Modifier.height(16.dp))
-            ShowStatusCard()
+            ShowStatusCard(selectedPersonas = selectedPersonas)
             Column(modifier = Modifier.padding(start = 8.dp, end = 8.dp)) {
                 Text(
                     text = stringResource(id = R.string.select_personas_title),

@@ -6,6 +6,9 @@ import com.example.helper_ghost.ui.components.Suggestion
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -16,6 +19,10 @@ import org.json.JSONObject
 object GhostBrain {
     private var llmInference: LlmInference? = null
     private val inferenceMutex = Mutex()
+    
+    private val _isReady = MutableStateFlow(false)
+    val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+
     private var isInitializing = false
 
     fun initialize(context: Context) {
@@ -30,6 +37,7 @@ object GhostBrain {
                     .build()
 
                 llmInference = LlmInference.createFromOptions(context, engineOptions)
+                _isReady.value = true
                 Log.d("GhostBrain", "LLM Initialized successfully")
             } catch (e: Exception) {
                 Log.e("GhostBrain", "Failed to initialize LLM: ${e.message}")
@@ -53,7 +61,9 @@ object GhostBrain {
             Return the output strictly as a JSON array of objects with "title" and "description" keys.
             Example: [{"title": "Quick Reply", "description": "Sounds good!"}, ...]
             
-            Keep descriptions under 15 words. Do not include any other text in the response.
+            provide the reply in the same language as the text is in.
+            
+            Keep descriptions under 15 words.
         """.trimIndent()
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -66,7 +76,7 @@ object GhostBrain {
                 val inference = llmInference
                 if (inference == null) {
                     withContext(Dispatchers.Main) { 
-                        onResult(listOf(Suggestion("Ghost is sleeping", "Still initializing the AI model..."))) 
+                        onResult(emptyList()) 
                     }
                 } else {
                     try {
@@ -90,7 +100,6 @@ object GhostBrain {
 
     private fun parseSuggestions(rawResponse: String): List<Suggestion> {
         return try {
-            // Clean response in case LLM adds markdown or fluff
             val cleaned = rawResponse.substringAfter("[").substringBeforeLast("]")
             val jsonStr = "[$cleaned]"
             val jsonArray = JSONArray(jsonStr)
@@ -107,7 +116,6 @@ object GhostBrain {
             list.take(3)
         } catch (e: Exception) {
             Log.e("GhostBrain", "Parse error: ${e.message}")
-            // Fallback: simple split if JSON fails
             listOf(Suggestion("Quick Ghost", rawResponse.take(50)))
         }
     }

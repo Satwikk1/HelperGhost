@@ -72,6 +72,7 @@ fun GhostFloatingBubble(
     var popupHeight by remember { mutableStateOf(0) }
     
     // LLM Related State
+    val isGhostBrainReady by GhostBrain.isReady.collectAsState()
     var isLLMLoading by remember { mutableStateOf(false) }
     var suggestionList by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
 
@@ -128,6 +129,7 @@ fun GhostFloatingBubble(
             ) {
                 ExpandedSuggestionView(
                     suggestions = suggestionList,
+                    isGhostBrainReady = isGhostBrainReady,
                     isLoading = isLLMLoading,
                     onClose = { onExpandChanged(false) }
                 )
@@ -172,13 +174,14 @@ fun GhostFloatingBubble(
                 .background(brush = Brush.linearGradient(listOf(AppColors.Purple.medium, AppColors.Purple.deep)))
                 .clickable {
                     if (!isExpandedProp) {
-                        // Start LLM Loading
-                        isLLMLoading = true
-                        suggestionList = emptyList()
-                        onTriggerScreenshot { recognizedText ->
-                            GhostBrain.getSmartSuggestions(recognizedText, selectedPersonas) { results ->
-                                suggestionList = results
-                                isLLMLoading = false
+                        if (isGhostBrainReady) {
+                            isLLMLoading = true
+                            suggestionList = emptyList()
+                            onTriggerScreenshot { recognizedText ->
+                                GhostBrain.getSmartSuggestions(recognizedText, selectedPersonas) { results ->
+                                    suggestionList = results
+                                    isLLMLoading = false
+                                }
                             }
                         }
                     }
@@ -200,6 +203,7 @@ fun GhostFloatingBubble(
 @Composable
 fun ExpandedSuggestionView(
     suggestions: List<Suggestion>,
+    isGhostBrainReady: Boolean,
     isLoading: Boolean,
     onClose: () -> Unit
 ) {
@@ -219,10 +223,10 @@ fun ExpandedSuggestionView(
             }
             Spacer(modifier = Modifier.height(16.dp))
             
-            if (isLoading) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    repeat(3) { ShimmerSuggestionCard() }
-                }
+            if (!isGhostBrainReady) {
+                InitializingView()
+            } else if (isLoading) {
+                ProcessingView()
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.heightIn(max = 400.dp)) {
                     items(suggestions) { SuggestionCard(it) }
@@ -232,6 +236,60 @@ fun ExpandedSuggestionView(
             Spacer(modifier = Modifier.height(16.dp))
             Text("View all activity →", modifier = Modifier.align(Alignment.CenterHorizontally), color = AppColors.Purple.medium, style = MaterialTheme.typography.labelLarge)
         }
+    }
+}
+
+@Composable
+fun ProcessingView() {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            val infiniteTransition = rememberInfiniteTransition(label = "scanning")
+            val scanOffset by infiniteTransition.animateFloat(
+                initialValue = -20f, targetValue = 20f,
+                animationSpec = infiniteRepeatable(animation = tween(800, easing = LinearOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                label = "offset"
+            )
+            
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp).offset(x = scanOffset.dp),
+                tint = AppColors.Pink.hot
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Scanning screen content...", color = AppColors.Purple.deep, style = MaterialTheme.typography.titleMedium)
+            Text("Ghost is thinking of clever replies", style = MaterialTheme.typography.bodySmall, color = AppColors.Purple.light)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        ShimmerSuggestionCard()
+    }
+}
+
+@Composable
+fun InitializingView() {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "ghost_bob")
+        val ghostOffset by infiniteTransition.animateFloat(
+            initialValue = 0f, targetValue = -15f,
+            animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+            label = "offset"
+        )
+        
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp).offset(y = ghostOffset.dp),
+            tint = AppColors.Purple.medium
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Ghost is waking up...", color = AppColors.Purple.deep, fontWeight = FontWeight.Bold)
+        Text("Warming up the AI model", style = MaterialTheme.typography.bodySmall, color = AppColors.Purple.light)
     }
 }
 
